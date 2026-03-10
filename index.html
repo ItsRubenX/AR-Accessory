@@ -25,6 +25,10 @@
             visibles[index] = !visibles[index];
             setVisible(button, entities, visibles[index]);
           });
+          button.addEventListener("touchstart", (e) => {
+                e.preventDefault();
+                button.emit("click");
+          }, { passive: false });
         });
       })
     </script>
