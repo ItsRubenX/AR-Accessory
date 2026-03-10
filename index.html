@@ -7,6 +7,7 @@
       document.addEventListener("DOMContentLoaded", function() {
         const list = ["glasses1", "glasses2", "hat1", "hat2", "earring", "fryingpan", "asianhat", "emoji-mask"];
         const visibles = [false, false, false, false, false, false, false, false];
+        let lastTouchTime = 0;
         const setVisible = (button, entities, visible) => {
           if (visible) {
             button.classList.add("selected");
@@ -21,15 +22,111 @@
           const button = document.querySelector("#" + item);
           const entities = document.querySelectorAll("." + item + "-entity");
           setVisible(button, entities, visibles[index]);
-          button.addEventListener('click', () => {
+          const toggleVisible = () => {
             visibles[index] = !visibles[index];
             setVisible(button, entities, visibles[index]);
+          };
+
+          button.addEventListener("click", () => {
+            if (Date.now() - lastTouchTime < 500) return;
+            toggleVisible();
           });
-          button.addEventListener("touchstart", (e) => {
-                e.preventDefault();
-                button.emit("click");
+          button.addEventListener("touchend", (e) => {
+            e.preventDefault();
+            lastTouchTime = Date.now();
+            toggleVisible();
           }, { passive: false });
         });
+
+        const photoButton = document.querySelector("#photo-button");
+        const downloadSnapshot = (dataUrl) => {
+          const link = document.createElement("a");
+          link.href = dataUrl;
+          link.download = `ar-photo-${Date.now()}.png`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        };
+
+        const takePhoto = () => {
+          const scene = document.querySelector("a-scene");
+          if (!scene) {
+            return;
+          }
+
+          const captureFrame = () => {
+            let canvas = null;
+            if (scene.components && scene.components.screenshot) {
+              canvas = scene.components.screenshot.getCanvas("perspective");
+            }
+            if (!canvas && scene.renderer && scene.renderer.domElement) {
+              canvas = scene.renderer.domElement;
+            }
+            if (!canvas) return;
+
+            const image = canvas.toDataURL("image/png");
+            downloadSnapshot(image);
+          };
+
+          // Capture on the next frame so the current render is available in the drawing buffer.
+          requestAnimationFrame(captureFrame);
+        };
+
+        if (photoButton) {
+          photoButton.addEventListener("click", () => {
+            if (Date.now() - lastTouchTime < 500) return;
+            takePhoto();
+          });
+          photoButton.addEventListener("touchend", (e) => {
+            e.preventDefault();
+            lastTouchTime = Date.now();
+            takePhoto();
+          }, { passive: false });
+        }
+
+        const disableCameraControls = () => {
+          const scene = document.querySelector("a-scene");
+          if (!scene) return;
+
+          const disableOnCamera = (cameraEl) => {
+            if (!cameraEl) return;
+            cameraEl.setAttribute("look-controls", "enabled: false; mouseEnabled: false; touchEnabled: false");
+            cameraEl.setAttribute("wasd-controls", "enabled: false");
+            if (cameraEl.components && cameraEl.components["look-controls"]) {
+              cameraEl.components["look-controls"].pause();
+            }
+            if (cameraEl.object3D) {
+              cameraEl.object3D.rotation.set(0, 0, 0);
+            }
+          };
+
+          scene.querySelectorAll("a-camera, [camera]").forEach(disableOnCamera);
+          if (scene.camera && scene.camera.el) {
+            disableOnCamera(scene.camera.el);
+          }
+
+          if (scene.canvas && !scene.canvas.dataset.dragLockApplied) {
+            const blockDrag = (e) => {
+              e.preventDefault();
+            };
+            scene.canvas.addEventListener("mousedown", blockDrag, { passive: false });
+            scene.canvas.addEventListener("mousemove", blockDrag, { passive: false });
+            scene.canvas.addEventListener("touchstart", blockDrag, { passive: false });
+            scene.canvas.addEventListener("touchmove", blockDrag, { passive: false });
+            scene.canvas.dataset.dragLockApplied = "true";
+          }
+        };
+
+        const scene = document.querySelector("a-scene");
+        if (scene) {
+          if (scene.hasLoaded) {
+            disableCameraControls();
+          } else {
+            scene.addEventListener("loaded", disableCameraControls, { once: true });
+          }
+          scene.addEventListener("camera-set-active", disableCameraControls);
+          setInterval(disableCameraControls, 1000);
+        }
       })
     </script>
     <style>
@@ -52,8 +149,22 @@
         height: 50px;
         object-fit: cover;
         cursor: pointer;
+        touch-action: manipulation;
       }
       .options-panel img.selected { border-color: green; }
+      #photo-button {
+        display: block;
+        margin-top: 8px;
+        width: 50px;
+        height: 50px;
+        border: solid 2px #222;
+        background: #fff;
+        color: #111;
+        font-weight: 600;
+        font-size: 11px;
+        cursor: pointer;
+        touch-action: manipulation;
+      }
     </style>
   </head>
 
@@ -68,10 +179,11 @@
         <img id="fryingpan" src="https://m.media-amazon.com/images/I/716KR8EtZJL._AC_UF894,1000_QL80_.jpg"/>
         <img id="asianhat" src="https://i.ebayimg.com/images/g/nk8AAOSw4IRmUovl/s-l1200.jpg"/>
         <img id="emoji-mask" src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRBQZf8vwqwM1RG9-yIIhYPwpTiL_Q68Nci-bZ4zOHySq06w9ob4TV_tNWFphMHmOtIuAs&s"/>
+        <button id="photo-button" type="button">Photo</button>
       </div>
 
       <a-scene mindar-face embedded color-space="sRGB"
-               renderer="colorManagement: true, physicallyCorrectLights"
+               renderer="colorManagement: true, physicallyCorrectLights, preserveDrawingBuffer: true"
                vr-mode-ui="enabled: false"
                device-orientation-permission-ui="enabled: false">
 
